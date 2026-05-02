@@ -25,9 +25,8 @@ An MCP (Model Context Protocol) server for the Skylight Calendar API. Enables AI
       "command": "npx",
       "args": ["@eaglebyte/skylight-mcp"],
       "env": {
-        "SKYLIGHT_ACCESS_TOKEN": "your_access_token",
-        "SKYLIGHT_REFRESH_TOKEN": "your_refresh_token",
-        "SKYLIGHT_DEVICE_FINGERPRINT": "your_device_fingerprint",
+        "SKYLIGHT_EMAIL": "your_email@example.com",
+        "SKYLIGHT_PASSWORD": "your_password",
         "SKYLIGHT_FRAME_ID": "your_frame_id"
       }
     }
@@ -38,9 +37,8 @@ An MCP (Model Context Protocol) server for the Skylight Calendar API. Enables AI
 **Claude Code:**
 ```bash
 claude mcp add skylight npx @eaglebyte/skylight-mcp \
-  -e SKYLIGHT_ACCESS_TOKEN=your_access_token \
-  -e SKYLIGHT_REFRESH_TOKEN=your_refresh_token \
-  -e SKYLIGHT_DEVICE_FINGERPRINT=your_device_fingerprint \
+  -e SKYLIGHT_EMAIL=your_email@example.com \
+  -e SKYLIGHT_PASSWORD=your_password \
   -e SKYLIGHT_FRAME_ID=your_frame_id
 ```
 
@@ -59,9 +57,8 @@ Then use in mcp.json:
       "command": "node",
       "args": ["/path/to/skylight-mcp/dist/index.js"],
       "env": {
-        "SKYLIGHT_ACCESS_TOKEN": "your_access_token",
-        "SKYLIGHT_REFRESH_TOKEN": "your_refresh_token",
-        "SKYLIGHT_DEVICE_FINGERPRINT": "your_device_fingerprint",
+        "SKYLIGHT_EMAIL": "your_email@example.com",
+        "SKYLIGHT_PASSWORD": "your_password",
         "SKYLIGHT_FRAME_ID": "your_frame_id"
       }
     }
@@ -89,65 +86,27 @@ Copy this into your AI's custom instructions or system prompt:
 
 ## Authentication
 
-Skylight migrated their API to OAuth 2.0. The previous `SKYLIGHT_EMAIL` / `SKYLIGHT_PASSWORD` endpoint (`POST /api/sessions`) now returns HTTP 401 "This version of Skylight is no longer supported" and is no longer functional. Two authentication modes are supported:
+The MCP server supports two authentication methods:
 
-### Option 1: OAuth refresh token (Recommended)
+### Option 1: Email/Password (Recommended)
 
-Capture an access token, refresh token, and device fingerprint from the Skylight web app once. The server uses the refresh token to mint new access tokens automatically as they expire, and persists rotated tokens to disk so cold starts continue from the latest pair.
+Use your Skylight account credentials. The server automatically follows Skylight's web OAuth login flow and manages the returned bearer token for you.
 
 ```env
-SKYLIGHT_ACCESS_TOKEN=your_access_token
-SKYLIGHT_REFRESH_TOKEN=your_refresh_token
-SKYLIGHT_DEVICE_FINGERPRINT=your_device_fingerprint
+SKYLIGHT_EMAIL=your_email@example.com
+SKYLIGHT_PASSWORD=your_password
 SKYLIGHT_FRAME_ID=your_frame_id
 ```
 
-**One-time capture procedure:**
+### Option 2: Manual Token (Legacy)
 
-1. Open Chrome or Edge, then open DevTools (F12) and switch to the **Network** tab.
-2. Enable **Preserve log** so requests survive the post-login redirect.
-3. Browse to `https://app.ourskylight.com` and log in with your Skylight account.
-4. In the Network tab filter, type `oauth/token`. Find the **POST** that returned `200`.
-5. Copy three values from that request:
-   - **Response** tab → `access_token` → `SKYLIGHT_ACCESS_TOKEN`
-   - **Response** tab → `refresh_token` → `SKYLIGHT_REFRESH_TOKEN`
-   - **Payload** tab (Form Data) → `skylight_api_client_device_fingerprint` → `SKYLIGHT_DEVICE_FINGERPRINT`
-
-You only do this once. After the first run the persistence layer (see [Token Persistence](#token-persistence) below) handles rotation transparently. Re-capture is only needed if the refresh token is invalidated by long inactivity, or if you delete the state file.
-
-### Option 2: Manual bearer token
-
-For users who prefer to manage tokens manually, supply a single bearer token. No automatic refresh; the token expires when Skylight expires it.
+Capture a bearer or basic token from Skylight traffic using a proxy tool.
 
 ```env
 SKYLIGHT_TOKEN=your_token_here
-SKYLIGHT_AUTH_TYPE=bearer
 SKYLIGHT_FRAME_ID=your_frame_id
+SKYLIGHT_AUTH_TYPE=bearer
 ```
-
-`SKYLIGHT_AUTH_TYPE` accepts `bearer` (default) or `basic`.
-
-### Token Persistence
-
-When using OAuth refresh-token mode (`SKYLIGHT_ACCESS_TOKEN` / `SKYLIGHT_REFRESH_TOKEN` / `SKYLIGHT_DEVICE_FINGERPRINT`), Skylight rotates the refresh token on every refresh — the old refresh token is invalidated the moment a new one is issued. To survive process restarts, the server persists the rotated tokens to a state file on disk:
-
-- **Windows:** `%APPDATA%\skylight-mcp\state.json`
-- **macOS:** `~/Library/Application Support/skylight-mcp/state.json`
-- **Linux:** `$XDG_DATA_HOME/skylight-mcp/state.json` (default `~/.local/share/skylight-mcp/state.json`)
-
-On startup the server reads tokens from the state file first; the env-var values only **seed** the very first run (or any run after the state file is deleted). You only need to re-capture tokens when:
-
-- The refresh token expires due to long inactivity.
-- You delete the state file.
-- The state file becomes corrupt (the server logs a warning and falls back to env vars).
-
-To inspect the current state file (token prefixes only, no full secrets are printed):
-
-```bash
-node scripts/show-state.mjs
-```
-
-The state path can be overridden with the `SKYLIGHT_STATE_FILE` env var, which is useful for tests or running multiple isolated configurations side by side.
 
 ### Finding your Frame ID
 
@@ -162,22 +121,25 @@ You still need to find your frame ID (the household identifier):
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `SKYLIGHT_ACCESS_TOKEN` | Option 1 | OAuth access token captured from the Skylight web app |
-| `SKYLIGHT_REFRESH_TOKEN` | Option 1 | OAuth refresh token captured from the Skylight web app |
-| `SKYLIGHT_DEVICE_FINGERPRINT` | Option 1 | Device fingerprint captured from the Skylight web app |
-| `SKYLIGHT_TOKEN` | Option 2 | Manual bearer token (alternative to OAuth) |
-| `SKYLIGHT_AUTH_TYPE` | No | `bearer` (default) or `basic` (Option 2 only) |
+| `SKYLIGHT_EMAIL` | Option 1 | Your Skylight account email |
+| `SKYLIGHT_PASSWORD` | Option 1 | Your Skylight account password |
+| `SKYLIGHT_TOKEN` | Option 2 | Your captured API token (if not using email/password) |
+| `SKYLIGHT_AUTH_TYPE` | No | `bearer` (default) or `basic` (for manual token) |
 | `SKYLIGHT_FRAME_ID` | Yes | Your household frame ID |
 | `SKYLIGHT_TIMEZONE` | No | Default timezone (default: `America/New_York`) |
-| `SKYLIGHT_STATE_FILE` | No | Override the persisted token state file path |
+
+### Auth Notes
+
+- Email/password auth no longer uses the legacy `/api/sessions` token flow.
+- The server now reproduces the Skylight web login flow and exchanges the resulting authorization code for a bearer token.
+- Manual token auth still works if you prefer to provide a captured token directly.
 
 ### Example .env file:
 
 ```env
-# OAuth refresh-token mode (recommended; capture once from the web app)
-SKYLIGHT_ACCESS_TOKEN=your_access_token
-SKYLIGHT_REFRESH_TOKEN=your_refresh_token
-SKYLIGHT_DEVICE_FINGERPRINT=your_device_fingerprint
+# Email/password auth (recommended)
+SKYLIGHT_EMAIL=your_email@example.com
+SKYLIGHT_PASSWORD=your_password
 SKYLIGHT_FRAME_ID=your_frame_id
 SKYLIGHT_TIMEZONE=America/New_York
 ```
